@@ -19,9 +19,9 @@ void myprintf(const char *fmt, ...);
 
 void sdcard_init(void);
 
-void start_recording(uint32_t freq);
+void sdcard_prepare_wav_file(uint32_t freq);
 
-void stop_recording(void);
+void sdcard_close_wav_file(void);
 
 void sdcard_wav_write(uint8_t *data, uint16_t data_size);
 
