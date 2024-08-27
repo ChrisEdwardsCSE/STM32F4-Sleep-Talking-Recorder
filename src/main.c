@@ -74,6 +74,8 @@ extern FIL fil; // file handler
 extern FRESULT f_result;
 extern uint32_t fil_size;
 
+FILINFO *file_info;
+
 uint8_t button_flag,				// Button pushed
 		start_stop_listening,		// Start/Stop' listening
 		stop_recording_flag,		// Stop the recording
@@ -252,6 +254,9 @@ int main(void)
 	* file/folder operations. "" path means the default drive
 	*/
 	sdcard_init();
+	HAL_Delay(500);
+	// Clear SD Card of all files on initialization
+	sdcard_clear_files(file_info);
 
   /* USER CODE END 2 */
 
@@ -308,7 +313,7 @@ int main(void)
 	   */
 	  if (start_recording_flag == 1)// if (start_recording_flag == 1 && already_recorded == 1)
 	  {
-		  sdcard_prepare_wav_file(44099);
+		  sdcard_prepare_wav_file(44099, (uint8_t *)adc_buf, ADC_BUF_LEN);
 		  start_recording_flag = 0;
 	  }
 

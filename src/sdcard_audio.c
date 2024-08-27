@@ -6,6 +6,7 @@
  */
 #include "sdcard_audio.h"
 
+
 /**
  * 0-3 RIFF {0x52, 0x49, 0x46, 0x46}
  * 4-7 size of file (bytes) {data_sec size + 36}
@@ -61,13 +62,13 @@ void myprintf(const char *fmt, ...)
  * Updates the frequency-related data wtihin the file header.
  *
  * @param freq - the frequency of recording
+ * @param data - buffer with dummy bytes to pad the beginning of the recording
  */
-void sdcard_prepare_wav_file(uint32_t freq)
+void sdcard_prepare_wav_file(uint32_t freq, uint8_t *data, uint16_t data_size)
 {
 	// Initialize file name
-	static char file_name[] = "w_000.wav";
-	static uint8_t file_count = 1;
-	int file_num_digits = file_count;
+	static char file_name_prepare[] = "w_00.wav";
+	static uint8_t file_digits_prepare = 0;
 
 	uint32_t byte_rate = freq * 2 * 1; // byte rate = Bpsample * channels
 	fil_header[24] = (uint8_t) (freq);
@@ -80,16 +81,12 @@ void sdcard_prepare_wav_file(uint32_t freq)
 	fil_header[31] = (uint8_t) (byte_rate >> 24);
 
 	// Define wave file name
-	file_name[4] = file_num_digits % 10 + 48; // ASCII 48 = '0'
-	file_num_digits /= 10;
-	file_name[3] = file_num_digits % 10 + 48;
-	file_num_digits /= 10;
-	file_name[2] = file_num_digits % 10 + 48;
-	file_num_digits /= 10;
-	file_count++;
+	file_name_prepare[2] = file_digits_prepare / 10 + 48; // ASCII = '0'
+	file_name_prepare[3] = file_digits_prepare % 10 + 48;
+	file_digits_prepare++;
 
 	// Create the file to be written to
-	f_result = f_open(&fil, file_name, FA_WRITE | FA_CREATE_ALWAYS);
+	f_result = f_open(&fil, file_name_prepare, FA_WRITE | FA_CREATE_ALWAYS);
 	if (f_result != 0)
 	{
 		myprintf("Error start_recording: %d\n", f_result);
@@ -99,6 +96,17 @@ void sdcard_prepare_wav_file(uint32_t freq)
 	{
 		myprintf("start_recording success\n");
 	}
+
+	// Fill beginning of SD Card with 0.5s of silence
+//	uint16_t temp_num;
+//	uint8_t *temp_data;
+//	for (uint8_t i = 0; i < 5; i ++)
+//	{
+//		temp_data = data;
+//		f_write(&fil, (void *)temp_data, data_size, (UINT *)&temp_num);
+//	}
+//	f_lseek(&fil, 10240); // advance pointer (4096 * 5)/2 bytes
+
 	fil_size = 0;
 }
 
@@ -215,10 +223,24 @@ void sdcard_read_stats()
 	f_close(&fil);
 }
 
+void sdcard_clear_files(FILINFO *file_info)
+{
+	static char file_name_delete[] = "w_00.wav";
+	static uint8_t file_digits_delete = 0;
+	FRESULT f_result_delete = FR_OK;
+	while (f_result_delete == FR_OK)
+	{
+		file_name_delete[2] = file_digits_delete / 10 + 48; // ASCII = '0'
+		file_name_delete[3] = file_digits_delete % 10 + 48;
+		f_result_delete = f_unlink(file_name_delete);
+		file_digits_delete++;
+	}
+}
+
 void sdcard_check_001wav(FILINFO *file_info)
 {
 	const char *file_name = "w_001.wav";
-	f_result = f_stat(file_name, &file_info);
+	f_result = f_stat(file_name, file_info);
 	if (f_result == FR_OK)
 	{
 		myprintf("found w_001.wav, and deleting it");
