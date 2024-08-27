@@ -57,12 +57,12 @@ void myprintf(const char *fmt, ...)
 }
 
 /**
- * Start recording of audio data. Creates the file and updates the frequency-related
- * data wtihin the file header.
+ * Start recording of audio data. Creates & opens the file for writing.
+ * Updates the frequency-related data wtihin the file header.
  *
  * @param freq - the frequency of recording
  */
-void start_recording(uint32_t freq)
+void sdcard_prepare_wav_file(uint32_t freq)
 {
 	// Initialize file name
 	static char file_name[] = "w_000.wav";
@@ -104,9 +104,10 @@ void start_recording(uint32_t freq)
 
 /**
  * Updates wav file's meta data, ie the new size of the file and the size of the
- * data. Then closes the file and resets first_time so that
+ * data. Then closes the file and resets first_time so that sdcard_wav_write knows to
+ * insert file header for the next time we record.
  */
-void stop_recording(void)
+void sdcard_close_wav_file(void)
 {
 	uint16_t temp_num;
 	fil_size -= 8; // remove byte 0-7 cuz they're not considered as part of file

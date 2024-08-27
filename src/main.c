@@ -75,7 +75,10 @@ extern FRESULT f_result;
 extern uint32_t fil_size;
 
 uint8_t button_flag,				// Button pushed
-		start_listening_flag,		// Start/Stop' listening
+		start_stop_listening,		// Start/Stop' listening
+		stop_recording_flag,		// Stop the recording
+		start_recording_flag,		// For restarting the recording ***** CLEAN UP
+		already_recorded, 			// Already recorded once ***** NEED TO CLEAN THIS UP
 		noise_flag,					// Noise detected
 		dma_half_full,				// DMA Half Full flag
 		dma_full;					// DMA Full flag
@@ -90,8 +93,7 @@ enum device_state_enum
 	RECORDING
 } device_state;
 
-uint8_t print_recording = 0;
-uint8_t print_stopped_recording = 0;
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -110,13 +112,13 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 }
 
 // Executes an ADC reading at 44.1kHz
-void TIM3_IRQHandler(void)
+void TIM3_IT_Handler(void)
 {
 	__HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_CC1);
-//	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&adc_buf, ADC_BUF_LEN); // Perform 1 reading
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // Perform 1 reading
 
-	// Reset index if DMA at end of buffer
-	if (adc_buf_index == 4096)
+	// Reset Index if DMA at the end of the buffer
+	if (adc_buf_index == ADC_BUF_LEN)
 	{
 		adc_buf_index = 0;
 	}
@@ -133,23 +135,40 @@ void TIM3_IRQHandler(void)
 		else if (device_state == LISTENING)
 		{
 			device_state = RECORDING;
-			HAL_TIM_Base_Start_IT(&htim4); // Start no noise timer
+			HAL_TIM_Base_Start_IT(&htim4); // Start no noise detection timer
 
-			print_recording = 1;
+			start_recording_flag = 1; // if listening and hear noise, set this high which prepares a file to write to
 		}
+
 	}
 	adc_buf_index++;
 }
 
-// Count 5 seconds
-void TIM4_IRQHandler(void)
+/**
+ * Count 5 seconds. Used for switching device_state RECORDING to LISTENING
+ * if no noise detected.
+ */
+void TIM4_IT_Handler(void)
 {
 	__HAL_TIM_CLEAR_FLAG(&htim4, TIM_FLAG_CC1);
 	// Turn off writing to SD Card
 	device_state = LISTENING;
+	stop_recording_flag = 1; // Tell while(1) to stop the recording and call stop_recording()
+//	already_recorded = 1; // We've just finished a recording, so could be the first one
 	HAL_TIM_Base_Stop_IT(&htim4); // Stop the timer if it expired
+}
 
-	print_stopped_recording = 1;
+// Timer expiration controller
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+	if (htim == &htim3)
+	{
+		TIM3_IT_Handler();
+	}
+	else if (htim == &htim4)
+	{
+		TIM4_IT_Handler();
+	}
 }
 
 // B1 Button switches devices between states OFF and LISTENING
@@ -158,7 +177,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	if (GPIO_Pin == (1 << 13))
 	{
 		button_flag = 1;
-		HAL_GPIO_TogglePin(GPIOA, 5);
 	}
 }
 /* USER CODE END 0 */
@@ -208,7 +226,7 @@ int main(void)
   spi_init_t spi1_init_handler;
   spi1_init_handler.CLKPhase = 0;
   spi1_init_handler.CLKPolarity = 0;
-  spi1_init_handler.Prescaler = 0b111;
+  spi1_init_handler.Prescaler = 0b111; // need SPI < 8MHz for SD Card
   spi1_init_handler.DataSize = 0;
   spi1_init_handler.FirstBit = 0;
   spi1_init_handler.Mode = 1;
@@ -226,46 +244,44 @@ int main(void)
 
   adc_buf_index = 0;
   device_state = OFF;
-
+  stop_recording_flag = 0;
+  already_recorded = 0;
 
 
 	/** Registers the work area; the filesystem object. Needed before any
 	* file/folder operations. "" path means the default drive
 	*/
 	sdcard_init();
-	HAL_Delay(1000);
 
-	FILINFO finfo;
-	sdcard_check_001wav(&finfo);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-	uint16_t i = 0;
 
   while (1)
   {
-
-	  // Button pushed
+	  // Button pushed, LISTENING or REOCRDING <-> OFF
 	  if (button_flag)
 	  {
 		  // Stop listening
 		  if (device_state != OFF)
 		  {
-			  device_state = OFF;
 			  HAL_ADC_Stop_DMA(&hadc1);
 			  HAL_TIM_Base_Stop_IT(&htim3);
-			  stop_recording();
-//			  myprintf("Stopped Listening\r\n");
+			  device_state = OFF;
 
+			  sdcard_close_wav_file(); // this catches if in RECORDING and button push
+			  dma_half_full = 0;
+			  dma_full = 0;
+//			  myprintf("Stopped Listening\r\n");
 		  }
 		  // Start listening
 		  else
 		  {
 			  device_state = LISTENING;
-			  myprintf("Started Listening\r\n");
-			  start_recording(44099);
-			  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&adc_buf, ADC_BUF_LEN); // adc_buf is words, but gets passed as dword (32 bits)
+//			  myprintf("Started Listening\r\n");
+//			  sdcard_prepare_wav_file(44099); // don't need this here
+			  HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // adc_buf is words, but gets passed as dword (32 bits)
 			  HAL_TIM_Base_Start_IT(&htim3); // Start timer for 44.1kHz ADC sampling rate
 		  }
 		  button_flag = 0; // Reset button flag
@@ -275,20 +291,33 @@ int main(void)
 	   * If in listening state, and there was noise detected (sdcard_write_en), and DMA half/completely full,
 	   * write out the contents to the SD card
 	   */
-	  if (device_state == RECORDING && dma_half_full)
+	  if (device_state == RECORDING && dma_half_full == 1)
 	  {
 		  sdcard_wav_write((uint8_t *)adc_buf, ADC_BUF_LEN);
 		  dma_half_full = 0;
 	  }
-	  if (device_state == RECORDING && dma_full)
+	  if (device_state == RECORDING && dma_full == 1)
 	  {
 		  sdcard_wav_write((uint8_t *)adc_buf + ADC_BUF_LEN, ADC_BUF_LEN);
 		  dma_full = 0;
 	  }
 
-	  // how to check if should write the stuff to file
+	  /**
+	   * If we already recorded once
+	   * don't use device = RECORDING here, we want a start recording command, not a "are we recording?" value
+	   */
+	  if (start_recording_flag == 1)// if (start_recording_flag == 1 && already_recorded == 1)
+	  {
+		  sdcard_prepare_wav_file(44099);
+		  start_recording_flag = 0;
+	  }
 
-
+	  // No noise was detected for 5s during RECORDING, transition RECORDING -> LISTENING
+	  if (stop_recording_flag == 1)
+	  {
+		  sdcard_close_wav_file();
+		  stop_recording_flag = 0;
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -369,8 +398,8 @@ static void MX_ADC1_Init(void)
   hadc1.Init.ScanConvMode = DISABLE;
   hadc1.Init.ContinuousConvMode = DISABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIGCONV_T3_CC1;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
   hadc1.Init.DMAContinuousRequests = ENABLE;
@@ -415,7 +444,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 3;
+  htim3.Init.Prescaler = 3-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 635;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
