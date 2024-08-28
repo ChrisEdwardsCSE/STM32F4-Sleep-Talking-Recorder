@@ -200,6 +200,24 @@ void sdcard_wav_write(uint8_t *data, uint16_t data_size)
 	fil_size += data_size; // update wav file's data size for its header
 }
 
+void sdcard_wav_read(uint8_t *data, uint16_t data_size)
+{
+	static char file_name_read[] = "w_00.wav";
+	static uint8_t file_digits_read = 0;
+	uint16_t *temp_num;
+
+	f_result = f_read(&fil, (void *)data, (UINT)data_size, (UINT *)temp_num);
+
+	if (/* Hit the end of the file */)
+	{
+		HAL_Delay(3000); // Wait 3s before next clip played
+		// Update to next file name
+		file_name_read[2] = file_digits_read / 10 + 48;
+		file_name_read[3] = file_digits_read % 10 + 48;
+		file_digits_read++;
+	}
+}
+
 void sdcard_clear_files(FILINFO *file_info)
 {
 	static char file_name_delete[] = "w_00.wav";
@@ -236,7 +254,7 @@ void sdcard_check_001wav(FILINFO *file_info)
 /**
  * Open & read the file
  */
-void sdcard_play_file(uint8_t *buffer, uint32_t buffer_len)
+void sdcard_play_file(char file_name[], uint8_t *buffer, uint32_t buffer_len)
 {
 	static char file_name_read[] = "w_00.wav";
 	static uint8_t file_digits_read = 0;
@@ -251,6 +269,11 @@ void sdcard_play_file(uint8_t *buffer, uint32_t buffer_len)
 
 	// Fill buffer with first few values from
 	f_read(&fil, (void *)buffer, (UINT)buffer_len, (UINT *)temp_num);
+
+	if (temp_num != buffer_len)
+	{
+		return 0;
+	}
 
 	// Update to next file name
 	file_name_read[2] = file_digits_read / 10 + 48;

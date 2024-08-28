@@ -125,6 +125,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 	dma_full = 1;
 }
 
+void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+{
+
+}
+
 // Executes an ADC reading at 44.1kHz
 void TIM3_IT_Handler(void)
 {
@@ -366,9 +371,29 @@ int main(void)
 	*/
 	if (button_flag_play)
 	{
+
 		do
 		{
 
+
+
+			f_open(&fil, file_name_read, FA_READ); // Open the selected file for reading
+			if (f_result != FR_OK)
+			{
+				// Error message or something
+			}
+
+			/**
+			 * Double buffer approach using halves of adc_buf.
+			 * First 1st half of buffer with SD Card data. Once done, start sending to
+			 * the amplifier over I2S + DMA. While that's going, start reading more SD Card
+			 * data to 2nd half of buffer. Then send that over I2S + DMA to amplifier.
+			 * Repeat.
+			 */
+			sdcard_wav_read((uint8_t *)adc_buf, ADC_BUF_LEN/2);
+			HAL_I2S_Transmit_DMA(&hi2s2, adc_buf, ADC_BUF_LEN/2);
+			sdcard_wav_read((uint8_t *)adc_buf + (ADC_BUF_LEN/2), ADC_BUF_LEN/2);
+			HAL_I2S_Transmit_DMA(&hi2s2, adc_buf + (ADC_BUF_LEN/2), ADC_BUF_LEN/2);
 		}
 		while (0);
 
