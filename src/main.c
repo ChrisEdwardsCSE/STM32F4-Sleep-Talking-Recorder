@@ -48,6 +48,9 @@
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
+I2S_HandleTypeDef hi2s2;
+DMA_HandleTypeDef hdma_spi2_tx;
+
 TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 
@@ -65,6 +68,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
+static void MX_I2S2_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint16_t adc_buf[ADC_BUF_LEN]; // note this is 4096 words, so 8192 bytes
@@ -86,6 +90,14 @@ uint8_t button_flag,				// Button pushed
 		dma_full;					// DMA Full flag
 uint16_t adc_buf_index;
 uint8_t sdcard_write_en;
+
+
+
+// testing speaker
+uint8_t button_flag_play;
+
+// file prepared
+uint8_t file_prepared;
 
 /* Enumerated type for device's state */
 enum device_state_enum
@@ -179,6 +191,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	if (GPIO_Pin == (1 << 13))
 	{
 		button_flag = 1;
+//		button_flag_play = 1;
 	}
 }
 /* USER CODE END 0 */
@@ -218,6 +231,7 @@ int main(void)
   MX_ADC1_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
+  MX_I2S2_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -293,21 +307,6 @@ int main(void)
 	  }
 
 	  /**
-	   * If in listening state, and there was noise detected (sdcard_write_en), and DMA half/completely full,
-	   * write out the contents to the SD card
-	   */
-	  if (device_state == RECORDING && dma_half_full == 1)
-	  {
-		  sdcard_wav_write((uint8_t *)adc_buf, ADC_BUF_LEN);
-		  dma_half_full = 0;
-	  }
-	  if (device_state == RECORDING && dma_full == 1)
-	  {
-		  sdcard_wav_write((uint8_t *)adc_buf + ADC_BUF_LEN, ADC_BUF_LEN);
-		  dma_full = 0;
-	  }
-
-	  /**
 	   * If we already recorded once
 	   * don't use device = RECORDING here, we want a start recording command, not a "are we recording?" value
 	   */
@@ -315,14 +314,68 @@ int main(void)
 	  {
 		  sdcard_prepare_wav_file(44099, (uint8_t *)adc_buf, ADC_BUF_LEN);
 		  start_recording_flag = 0;
+		  file_prepared = 1;
 	  }
+
+	  /**
+	   * If in listening state, and there was noise detected (sdcard_write_en), and DMA half/completely full,
+	   * write out the contents to the SD card
+	   */
+	  if (device_state == RECORDING && dma_half_full == 1 && file_prepared == 1)
+	  {
+		  if (file_prepared != 1)
+		  {
+			  sdcard_prepare_wav_file(44099, (uint8_t *)adc_buf, ADC_BUF_LEN);
+			  file_prepared = 1;
+		  }
+		  sdcard_wav_write((uint8_t *)adc_buf, ADC_BUF_LEN);
+		  dma_half_full = 0;
+	  }
+	  if (device_state == RECORDING && dma_full == 1 && file_prepared == 1)
+	  {
+		  if (file_prepared != 1)
+		  {
+			  sdcard_prepare_wav_file(44099, (uint8_t *)adc_buf, ADC_BUF_LEN);
+			  file_prepared = 1;
+		  }
+		  sdcard_wav_write((uint8_t *)adc_buf + ADC_BUF_LEN, ADC_BUF_LEN);
+
+
+//		   Testing just one DMA write
+//		  HAL_Delay(100);
+//		  sdcard_close_wav_file();
+//		  HAL_TIM_Base_Stop_IT(&htim3); // just turn off ADC after one whole write
+
+
+		  dma_full = 0;
+	  }
+
+
 
 	  // No noise was detected for 5s during RECORDING, transition RECORDING -> LISTENING
 	  if (stop_recording_flag == 1)
 	  {
 		  sdcard_close_wav_file();
 		  stop_recording_flag = 0;
+		  file_prepared = 0;
 	  }
+
+	/**
+	* Play recordings, will only get here if not listening/recording, maybe put another device state
+	* for playing
+	*/
+	if (button_flag_play)
+	{
+		do
+		{
+
+		}
+		while (0);
+
+		HAL_I2S_Transmit_DMA(&hi2s2, adc_buf, ADC_BUF_LEN);
+
+		button_flag_play = 0;
+	}
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -426,6 +479,40 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2S2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2S2_Init(void)
+{
+
+  /* USER CODE BEGIN I2S2_Init 0 */
+
+  /* USER CODE END I2S2_Init 0 */
+
+  /* USER CODE BEGIN I2S2_Init 1 */
+
+  /* USER CODE END I2S2_Init 1 */
+  hi2s2.Instance = SPI2;
+  hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
+  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
+  hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_44K;
+  hi2s2.Init.CPOL = I2S_CPOL_LOW;
+  hi2s2.Init.ClockSource = I2S_CLOCK_PLL;
+  hi2s2.Init.FullDuplexMode = I2S_FULLDUPLEXMODE_DISABLE;
+  if (HAL_I2S_Init(&hi2s2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2S2_Init 2 */
+
+  /* USER CODE END I2S2_Init 2 */
 
 }
 
@@ -586,8 +673,12 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
   /* DMA2_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
@@ -611,11 +702,11 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin : B1_Pin */
-  GPIO_InitStruct.Pin = B1_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  /*Configure GPIO pin : PC13 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);

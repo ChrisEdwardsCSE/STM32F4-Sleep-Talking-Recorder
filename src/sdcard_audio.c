@@ -15,7 +15,7 @@
  * 16-19 length of format data {0x10, 0x00, 0x00, 0x00} (16)
  * 20-21 type of fomart "PCM" (1) {0x01, 0x00}
  * 22-23 num channels (2) {0x02, 0x00}
- * 24-27 sample rate (32kHz) {0x80, 0x7d, 0x00, 0x00}
+ * 24-27 sample rate (44099kHz) {0x80, 0x7d, 0x00, 0x00}
  * 28-31 byte rate; sample rate * Bpsample * channels (19200 it's actually 128000 tho) {0x00, 0xf4, 0x01, 0x00}
  * 32-33 Bpsample * channels (4) {0x04, 0x00}
  * 34-35 bits per sample (16) {0x10, 0x00}
@@ -58,6 +58,23 @@ void myprintf(const char *fmt, ...)
 }
 
 /**
+ * Just mount the SD Card
+ */
+void sdcard_init()
+{
+	f_result = f_mount(&fatfs, "", 1);
+	if (f_result != 0)
+	{
+		myprintf("Error sdcard_init, %d\n", f_result);
+		return;
+	}
+	else
+	{
+		myprintf("sdcard_init success\n");
+	}
+}
+
+/**
  * Start recording of audio data. Creates & opens the file for writing.
  * Updates the frequency-related data wtihin the file header.
  *
@@ -69,6 +86,7 @@ void sdcard_prepare_wav_file(uint32_t freq, uint8_t *data, uint16_t data_size)
 	// Initialize file name
 	static char file_name_prepare[] = "w_00.wav";
 	static uint8_t file_digits_prepare = 0;
+	uint16_t temp_num;
 
 	uint32_t byte_rate = freq * 2 * 1; // byte rate = Bpsample * channels
 	fil_header[24] = (uint8_t) (freq);
@@ -96,6 +114,8 @@ void sdcard_prepare_wav_file(uint32_t freq, uint8_t *data, uint16_t data_size)
 	{
 		myprintf("start_recording success\n");
 	}
+
+	f_write(&fil, (void *)fil_header, sizeof(fil_header),(UINT*)&temp_num);
 
 	// Fill beginning of SD Card with 0.5s of silence
 //	uint16_t temp_num;
@@ -180,49 +200,6 @@ void sdcard_wav_write(uint8_t *data, uint16_t data_size)
 	fil_size += data_size; // update wav file's data size for its header
 }
 
-/**
- * Just mount the SD Card
- */
-void sdcard_init()
-{
-	f_result = f_mount(&fatfs, "", 1);
-	if (f_result != 0)
-	{
-		myprintf("Error sdcard_init, %d\n", f_result);
-		return;
-	}
-	else
-	{
-		myprintf("sdcard_init success\n");
-	}
-}
-
-void sdcard_read_stats()
-{
-	DWORD free_clusters, free_sectors, total_sectors;
-
-	FATFS* getFreeFs;
-
-	/**
-	* get num of free clusters on card. set in
-	* path = "" is default drive. puts the value in free_clusters
-	*/
-	f_result = f_getfree("", &free_clusters, &getFreeFs);
-	if (f_result != FR_OK)
-	{
-		myprintf("f_getfree error (&i)\r\n", f_result);
-		while(1);
-	}
-	// total sectors = (num of FAT entries - 2) * num clusters
-	total_sectors = (getFreeFs->n_fatent - 2) * getFreeFs->csize;
-	// num free sectors = num free clusters
-	free_sectors = free_clusters * getFreeFs->csize;
-
-	myprintf("sd card stats:\r\n%10lu KiB total drive space. \r\n%10lu KiB availabile.\r\n", total_sectors/2, free_sectors/2);
-
-	f_close(&fil);
-}
-
 void sdcard_clear_files(FILINFO *file_info)
 {
 	static char file_name_delete[] = "w_00.wav";
@@ -254,4 +231,29 @@ void sdcard_check_001wav(FILINFO *file_info)
 	{
 		myprintf("could not find w_001.wav");
 	}
+}
+
+/**
+ * Open & read the file
+ */
+void sdcard_play_file(uint8_t *buffer, uint32_t buffer_len)
+{
+	static char file_name_read[] = "w_00.wav";
+	static uint8_t file_digits_read = 0;
+	uint16_t *temp_num;
+
+	f_open(&fil, file_name_read, FA_READ); // Open the selected file for reading
+	if (f_result != FR_OK)
+	{
+		// Error message or something
+		return;
+	}
+
+	// Fill buffer with first few values from
+	f_read(&fil, (void *)buffer, (UINT)buffer_len, (UINT *)temp_num);
+
+	// Update to next file name
+	file_name_read[2] = file_digits_read / 10 + 48;
+	file_name_read[3] = file_digits_read % 10 + 48;
+	file_digits_read++;
 }
