@@ -14,7 +14,7 @@
  * 12-15 "fmt" {0x66, 0x6d, 0x74, 0x20}
  * 16-19 length of format data {0x10, 0x00, 0x00, 0x00} (16)
  * 20-21 type of fomart "PCM" (1) {0x01, 0x00}
- * 22-23 num channels (2) {0x02, 0x00}
+ * 22-23 num channels (1) {0x01, 0x00}
  * 24-27 sample rate (44099kHz) {0x80, 0x7d, 0x00, 0x00}
  * 28-31 byte rate; sample rate * Bpsample * channels (19200 it's actually 128000 tho) {0x00, 0xf4, 0x01, 0x00}
  * 32-33 Bpsample * channels (4) {0x04, 0x00}
@@ -23,23 +23,41 @@
  * 40-43 size of data section {data section size}
  * THEN comes the data
  */
+// 2 channels
+//static uint8_t fil_header [44]={0x52, 0x49, 0x46, 0x46,
+//		0xa4, 0xa9, 0x03, 0x00,
+//		0x57, 0x41, 0x56, 0x45,
+//		0x66, 0x6d, 0x74, 0x20,
+//		0x10, 0x00, 0x00, 0x00,
+//		0x02, 0x00, // 2 or 1 channel? I had it 2 I think keep it
+//		0x01, 0x00, // this WAS 0x02, 0x00
+//		0x43, 0xac, 0x00, 0x00, // (44099) = 0xac43
+//		0x80, 0x88, 0x15, 0x00, // 44100 * 16 * 2 = 1411200 = 0x158880
+//		0x04, 0x00, // this WAS 0x04 0x00 bc 2 * 2
+//		0x0c, 0x00, // this WAS 0x10 0x00 (16)
+//		0x64, 0x61, 0x74, 0x61,
+//		0x80, 0xa9, 0x03, 0x00};
+
+// 1 channel
 static uint8_t fil_header [44]={0x52, 0x49, 0x46, 0x46,
 		0xa4, 0xa9, 0x03, 0x00,
 		0x57, 0x41, 0x56, 0x45,
 		0x66, 0x6d, 0x74, 0x20,
 		0x10, 0x00, 0x00, 0x00,
-		0x01, 0x00,
-		0x01, 0x00, // this WAS 0x02, 0x00
+		0x01, 0x00, // 2 or 1 channel? I had it 2 I think keep it
+		0x01, 0x00, // num channels = 1
 		0x43, 0xac, 0x00, 0x00, // (44099)
-		0x00, 0xf4, 0x01, 0x00,
-		0x02, 0x00, // this WAS 0x04 0x00 bc 2 * 2
-		0x0c, 0x00, // this WAS 0x10 0x00 (16)
+//		0x40, 0xc4, 0x0a, 0x00, // byte rate = 44100 * 16bps * 1 channel = 705600 = 0xac440 WRONG
+		0x88, 0x58, 0x01, 0x00, // Byte rate = 44100 * 2 Bps * 1 channel = 88200 = 0x15888
+		0x02, 0x00, // Bytes per sample (2) * channels (1) = 2
+		0x10, 0x00, // 16 bits per sample
 		0x64, 0x61, 0x74, 0x61,
 		0x80, 0xa9, 0x03, 0x00};
 
-static FATFS fatfs; // fatfs handler;
-static FIL fil; // file handler
-static FRESULT f_result;
+
+ FATFS fatfs; // fatfs handler;
+FIL fil; // file handler
+FRESULT f_result;
 static uint32_t fil_size;
 static uint8_t first_time = 0;
 
@@ -200,6 +218,8 @@ void sdcard_wav_write(uint8_t *data, uint16_t data_size)
 	fil_size += data_size; // update wav file's data size for its header
 }
 
+
+
 void sdcard_clear_files(FILINFO *file_info)
 {
 	static char file_name_delete[] = "w_00.wav";
@@ -233,27 +253,32 @@ void sdcard_check_001wav(FILINFO *file_info)
 	}
 }
 
-/**
- * Open & read the file
- */
-void sdcard_play_file(uint8_t *buffer, uint32_t buffer_len)
-{
-	static char file_name_read[] = "w_00.wav";
-	static uint8_t file_digits_read = 0;
-	uint16_t *temp_num;
-
-	f_open(&fil, file_name_read, FA_READ); // Open the selected file for reading
-	if (f_result != FR_OK)
-	{
-		// Error message or something
-		return;
-	}
-
-	// Fill buffer with first few values from
-	f_read(&fil, (void *)buffer, (UINT)buffer_len, (UINT *)temp_num);
-
-	// Update to next file name
-	file_name_read[2] = file_digits_read / 10 + 48;
-	file_name_read[3] = file_digits_read % 10 + 48;
-	file_digits_read++;
-}
+///**
+// * Open & read the file
+// */
+//void sdcard_play_file(char file_name[], uint8_t *buffer, uint32_t buffer_len)
+//{
+//	static char file_name_read[] = "w_00.wav";
+//	static uint8_t file_digits_read = 0;
+//	uint16_t *temp_num;
+//
+//	f_open(&fil, file_name_read, FA_READ); // Open the selected file for reading
+//	if (f_result != FR_OK)
+//	{
+//		// Error message or something
+//		return;
+//	}
+//
+//	// Fill buffer with first few values from
+//	f_read(&fil, (void *)buffer, (UINT)buffer_len, (UINT *)temp_num);
+//
+//	if (temp_num != buffer_len)
+//	{
+//		return 0;
+//	}
+//
+//	// Update to next file name
+//	file_name_read[2] = file_digits_read / 10 + 48;
+//	file_name_read[3] = file_digits_read % 10 + 48;
+//	file_digits_read++;
+//}

@@ -184,13 +184,6 @@ static void __SPI_Enable(SPI_TypeDef *SPIx)
 	SPIx->CR1 |= SPI_REG_CR1_SPE;
 }
 
-/**
- * Disable SPI device
- */
-static void __SPI_Disable(SPI_TypeDef *SPIx)
-{
-	SPIx->CR1 &= ~SPI_REG_CR1_SPE;
-}
 
 /*
  * Enables TXE Interrupt

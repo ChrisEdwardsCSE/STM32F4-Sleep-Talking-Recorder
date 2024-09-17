@@ -91,10 +91,8 @@ uint8_t button_flag,				// Button pushed
 uint16_t adc_buf_index;
 uint8_t sdcard_write_en;
 
-
-
 // testing speaker
-uint8_t button_flag_play;
+uint8_t button_playback;
 
 // file prepared
 uint8_t file_prepared;
@@ -104,7 +102,8 @@ enum device_state_enum
 {
 	OFF,
 	LISTENING,
-	RECORDING
+	RECORDING,
+	PLAYBACK
 } device_state;
 
 
@@ -125,11 +124,16 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 	dma_full = 1;
 }
 
+//void HAL_I2S_RxHalfCpltCallback(I2S_HandleTypeDef *hi2s)
+//{
+//
+//}
+
 // Executes an ADC reading at 44.1kHz
 void TIM3_IT_Handler(void)
 {
 	__HAL_TIM_CLEAR_FLAG(&htim3, TIM_FLAG_CC1);
-	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // Perform 1 reading
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adc_buf, ADC_BUF_LEN); // Perform 1st reading
 
 	// Reset Index if DMA at the end of the buffer
 	if (adc_buf_index == ADC_BUF_LEN)
@@ -153,7 +157,6 @@ void TIM3_IT_Handler(void)
 
 			start_recording_flag = 1; // if listening and hear noise, set this high which prepares a file to write to
 		}
-
 	}
 	adc_buf_index++;
 }
@@ -191,7 +194,12 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	if (GPIO_Pin == (1 << 13))
 	{
 		button_flag = 1;
-//		button_flag_play = 1;
+//		button_playback = 1;
+	}
+	else if (GPIO_Pin == (1 << 12) && device_state != PLAYBACK)
+	{
+		device_state = PLAYBACK;
+		button_playback = 1;
 	}
 }
 /* USER CODE END 0 */
@@ -238,11 +246,13 @@ int main(void)
   DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_TIM3_STOP;
   DBGMCU->APB1FZ |= DBGMCU_APB1_FZ_DBG_TIM4_STOP;
 
+//  hi2s2.Instance->I2SPR &= ~(0xff);
+//  hi2s2.Instance->I2SPR |= 0x0c;
   // Initialize SPI1
   spi_init_t spi1_init_handler;
   spi1_init_handler.CLKPhase = 0;
   spi1_init_handler.CLKPolarity = 0;
-  spi1_init_handler.Prescaler = 0b111; // need SPI < 8MHz for SD Card
+  spi1_init_handler.Prescaler = 0b011; // need SPI < 8MHz for SD Card
   spi1_init_handler.DataSize = 0;
   spi1_init_handler.FirstBit = 0;
   spi1_init_handler.Mode = 1;
@@ -253,23 +263,19 @@ int main(void)
   spi1_handler.Init = spi1_init_handler;
   SPI_Init(&spi1_handler);
 
-  MX_FATFS_Init();
-
-  myprintf("test print\r\n");
-  HAL_Delay(1000);
-
   adc_buf_index = 0;
   device_state = OFF;
   stop_recording_flag = 0;
   already_recorded = 0;
 
+//  hi2s2.Instance->I2SPR = 0b00011101; // this only changes the pitch
 
 	/** Registers the work area; the filesystem object. Needed before any
 	* file/folder operations. "" path means the default drive
 	*/
 	sdcard_init();
 	HAL_Delay(500);
-	// Clear SD Card of all files on initialization
+
 	sdcard_clear_files(file_info);
 
   /* USER CODE END 2 */
@@ -317,6 +323,8 @@ int main(void)
 		  file_prepared = 1;
 	  }
 
+	  // ************ PROBABLY gotta change this so that it creates the next file ready to write before we hear noise.
+	  // If we don't end up using the file, delete it, no biggie, that's much better than what we got here
 	  /**
 	   * If in listening state, and there was noise detected (sdcard_write_en), and DMA half/completely full,
 	   * write out the contents to the SD card
@@ -340,13 +348,6 @@ int main(void)
 		  }
 		  sdcard_wav_write((uint8_t *)adc_buf + ADC_BUF_LEN, ADC_BUF_LEN);
 
-
-//		   Testing just one DMA write
-//		  HAL_Delay(100);
-//		  sdcard_close_wav_file();
-//		  HAL_TIM_Base_Stop_IT(&htim3); // just turn off ADC after one whole write
-
-
 		  dma_full = 0;
 	  }
 
@@ -364,17 +365,51 @@ int main(void)
 	* Play recordings, will only get here if not listening/recording, maybe put another device state
 	* for playing
 	*/
-	if (button_flag_play)
+	if (button_playback)
 	{
-		do
+		char file_name_read[] = "w_00.wav";
+		uint8_t file_digits_read = 0;
+		f_result = f_open(&fil, file_name_read, FA_READ); // Open the first file
+
+		// Full SD Card Play loop
+		while (f_result != FR_NO_FILE)
 		{
+			UINT bytes_read;
+			UINT bytes_to_read = ADC_BUF_LEN / 2;
 
+			// Individual file loop
+			do
+			{
+				/**
+				 * Double buffer approach using halves of adc_buf.
+				 * First 1st half of buffer with SD Card data. Once done, start sending to
+				 * the amplifier over I2S + DMA. While that's going, start reading more SD Card
+				 * data to 2nd half of buffer. Then send that over I2S + DMA to amplifier.
+				 * Repeat.
+				 */
+				f_read(&fil, (void *)adc_buf, bytes_to_read, (UINT *)&bytes_read);
+				HAL_I2S_Transmit_DMA(&hi2s2, adc_buf, bytes_to_read);
+
+				// If read all bytes, read the second half
+				if (bytes_to_read == bytes_read)
+				{
+					f_read(&fil, (void *)adc_buf + bytes_to_read, bytes_to_read, (UINT *)&bytes_read);
+					HAL_I2S_Transmit_DMA(&hi2s2, adc_buf + bytes_to_read, bytes_to_read);
+				}
+			} while (bytes_read == bytes_to_read);
+			f_result = f_close(&fil);
+			HAL_Delay(2000);
+			// if here, then hit the end of the file. Increment file name
+			file_digits_read++;
+			file_name_read[2] = file_digits_read / 10 + 48;
+			file_name_read[3] = file_digits_read % 10 + 48;
+
+			f_result = f_open(&fil, file_name_read, FA_READ); // open the new file
 		}
-		while (0);
-
-		HAL_I2S_Transmit_DMA(&hi2s2, adc_buf, ADC_BUF_LEN);
-
-		button_flag_play = 0;
+		/* ******** MY CODE END ******** */
+		HAL_I2S_DMAStop(&hi2s2);
+		button_playback = 0;
+		device_state = OFF;
 	}
     /* USER CODE END WHILE */
 
@@ -499,8 +534,8 @@ static void MX_I2S2_Init(void)
   /* USER CODE END I2S2_Init 1 */
   hi2s2.Instance = SPI2;
   hi2s2.Init.Mode = I2S_MODE_MASTER_TX;
-  hi2s2.Init.Standard = I2S_STANDARD_PHILIPS;
-  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B;
+  hi2s2.Init.Standard = I2S_STANDARD_MSB;
+  hi2s2.Init.DataFormat = I2S_DATAFORMAT_16B_EXTENDED;
   hi2s2.Init.MCLKOutput = I2S_MCLKOUTPUT_DISABLE;
   hi2s2.Init.AudioFreq = I2S_AUDIOFREQ_44K;
   hi2s2.Init.CPOL = I2S_CPOL_LOW;
@@ -538,7 +573,7 @@ static void MX_TIM3_Init(void)
   htim3.Instance = TIM3;
   htim3.Init.Prescaler = 3-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 635;
+  htim3.Init.Period = 315;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
@@ -702,8 +737,8 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  /*Configure GPIO pins : PC13 PC12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_12;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);

@@ -185,9 +185,9 @@ void HAL_I2S_MspInit(I2S_HandleTypeDef* hi2s)
   /** Initializes the peripherals clock
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_I2S_APB1;
-    PeriphClkInitStruct.PLLI2S.PLLI2SN = 192;
+    PeriphClkInitStruct.PLLI2S.PLLI2SN = 50;
     PeriphClkInitStruct.PLLI2S.PLLI2SP = RCC_PLLI2SP_DIV2;
-    PeriphClkInitStruct.PLLI2S.PLLI2SM = 16;
+    PeriphClkInitStruct.PLLI2S.PLLI2SM = 8;
     PeriphClkInitStruct.PLLI2S.PLLI2SR = 2;
     PeriphClkInitStruct.PLLI2S.PLLI2SQ = 2;
     PeriphClkInitStruct.PLLI2SDivQ = 1;
