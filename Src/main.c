@@ -289,8 +289,12 @@ int main(void)
 			  HAL_TIM_Base_Stop_IT(&htim3);
 			  device_state = OFF;
 
-			  sdcard_op_result = sdcard_close_wav_file(); // Catches if in RECORDING and button is push
-			  if (sdcard_op_result != FR_OK) { goto error; }
+			  // Catches if in RECORDING and button is push
+			  if (device_state == RECORDING)
+			  {
+				  sdcard_op_result = sdcard_close_wav_file();
+				  if (sdcard_op_result != FR_OK) { goto error; }
+			  }
 
 			  // Reset DMA buffer
 			  dma_half_full = 0;
@@ -395,7 +399,7 @@ int main(void)
 	return 1;
 
 	skip_error:
-
+	continue;
   }
   /* USER CODE END 3 */
 }
