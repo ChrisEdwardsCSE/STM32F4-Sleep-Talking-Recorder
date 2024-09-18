@@ -1,4 +1,4 @@
-# Sleep Talking Recorder Device
+# Sleep Talking Recorder Device on STM32F4 MCU
 This project records all the sounds it detects during your sleep, saves them in .wav files, and plays them back to you in the morning. It uses an analog output MEMS microphone (ADC), an SD Card (FatFS, SPI), and an amplifier (I2S) and loudspeaker to playback the audio.
 
 The device operates as a state machine with its 4 states being: Off, Listening, Recording, and Playback. Users switch the device into Listening mode before they sleep and the device begiins taking microphone readings. If the device detects significant nosie, it transitions to the Recording state and writes the sounds it picks up to the SD Card. When the user wakes up, they can switch the device to the Playback state and the recordings that were taken will play.
