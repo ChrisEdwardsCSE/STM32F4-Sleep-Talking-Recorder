@@ -389,8 +389,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	goto skip_error;
+
 	error:
 	return 1;
+
+	skip_error:
+
   }
   /* USER CODE END 3 */
 }
