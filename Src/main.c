@@ -159,7 +159,6 @@ void TIM4_IT_Handler(void)
 
 	device_state = LISTENING;
 	stop_recording_flag = 1; // Flag to stop recording and close file
-
 	HAL_TIM_Base_Stop_IT(&htim4);
 }
 
@@ -285,16 +284,19 @@ int main(void)
 		  // Stop listening
 		  if (device_state != OFF)
 		  {
-			  HAL_ADC_Stop_DMA(&hadc1);
-			  HAL_TIM_Base_Stop_IT(&htim3);
-			  device_state = OFF;
-
 			  // Catches if in RECORDING and button is push
 			  if (device_state == RECORDING)
 			  {
 				  sdcard_op_result = sdcard_close_wav_file();
 				  if (sdcard_op_result != FR_OK) { goto error; }
+
+				  HAL_TIM_Base_Stop_IT(&htim4);
+				  htim4.Instance->CNT = 0;
 			  }
+
+			  HAL_ADC_Stop_DMA(&hadc1);
+			  HAL_TIM_Base_Stop_IT(&htim3);
+			  device_state = OFF;
 
 			  // Reset DMA buffer
 			  dma_half_full = 0;
@@ -352,7 +354,7 @@ int main(void)
 		if (sdcard_op_result != FR_OK) { goto error; }
 
 		// Play back all files on SD Card
-		while (sdcard_op_result != FR_NO_FILE)
+		while (sdcard_op_result == FR_OK)
 		{
 			UINT bytes_read;
 			UINT bytes_to_read = AUDIO_BUF_LEN / 2; // Sending half of audio_buf to I2S via DMA at a time
@@ -389,6 +391,7 @@ int main(void)
 		HAL_I2S_DMAStop(&hi2s2);
 		playback_button = 0;
 		device_state = OFF;
+		f_mount(0,"",0);
 	}
     /* USER CODE END WHILE */
 
