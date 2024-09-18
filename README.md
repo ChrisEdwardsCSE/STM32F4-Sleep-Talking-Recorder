@@ -1,5 +1,5 @@
 # Sleep Talking Recorder Device on STM32F4 MCU
-**[Demo Video](https://youtu.be/M0g0gUcA7BM)**
+<strong><a href="https://youtu.be/iu9fwpszx3Q" target="_blank">Demo Video</a></strong>
 
 This project records all the sounds it detects during your sleep, saves them in .wav files, and plays them back to you in the morning. It uses an analog output MEMS microphone (ADC), an SD Card (FatFS, SPI), and an amplifier (I2S) and loudspeaker to playback the audio. The device was built on a STM32F4 microcontroller board using STM's HAL and drivers that I wrote for its peripherals.
 
