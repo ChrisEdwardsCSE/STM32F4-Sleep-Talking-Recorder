@@ -121,9 +121,20 @@ void TIM3_IT_Handler(void)
 	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)audio_buf, AUDIO_BUF_LEN); // Take one reading. Note that CubeIDE acknowledges audio_buf in half-words
 
 
-	// If noise detected, enable SD Card Write
+	// If noise detected, switch to RECORDING and enable SD Card Write
 	if (audio_buf[audio_buf_index] >= NOISE_THRESHOLD)
 	{
+		// If SysTick suspended, resume it
+		if (!(SysTick->CTRL & SysTick_CTRL_TICKINT_Msk))
+		{
+			HAL_ResumeTick();
+		}
+		// In RECORDING state, disable sleep mode
+		if (SCB->SCR & SCB_SCR_SLEEPONEXIT_Msk)
+		{
+			HAL_PWR_DisableSleepOnExit();
+		}
+
 		// Reset 5s silence detection timer if hear noise while in RECORDING state
 		if (device_state == RECORDING)
 		{
@@ -159,6 +170,7 @@ void TIM4_IT_Handler(void)
 
 	device_state = LISTENING;
 	stop_recording_flag = 1; // Flag to stop recording and close file
+
 	HAL_TIM_Base_Stop_IT(&htim4);
 }
 
@@ -192,6 +204,10 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	{
 		device_state = PLAYBACK;
 		playback_button = 1;
+
+		// In PLAYBACK state; turn off sleep mode
+		HAL_ResumeTick();
+		HAL_PWR_DisableSleepOnExit();
 	}
 }
 
@@ -271,6 +287,7 @@ int main(void)
   // Prepare the first file
   sdcard_op_result = sdcard_prepare_wav_file(44100);
   if (sdcard_op_result != FR_OK) { goto error; }
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -278,6 +295,14 @@ int main(void)
 
   while (1)
   {
+	  // Device sleep while off
+	  if (device_state == OFF)
+	  {
+		  HAL_SuspendTick();
+		  HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+
+		  HAL_ResumeTick(); // Resume once interrupt
+	  }
 	  // B1 Button pushed
 	  if (listening_off_button)
 	  {
@@ -307,6 +332,10 @@ int main(void)
 		  {
 			  device_state = LISTENING;
 			  HAL_TIM_Base_Start_IT(&htim3); // Start timer for ADC microphone sampling
+
+			  // Sleep on exit from ADC microphone sampling timer interrupt
+
+			  HAL_PWR_EnableSleepOnExit();
 		  }
 
 		  listening_off_button = 0;
@@ -343,6 +372,10 @@ int main(void)
 		  // Prepare a new wav file
 		  sdcard_op_result = sdcard_prepare_wav_file(44100);
 		  if (sdcard_op_result != FR_OK) { goto error; }
+
+		  // Switching to LISTENING state which sleeps between ADC microphone samplings
+		  HAL_SuspendTick();
+		  HAL_PWR_EnableSleepOnExit();
 	  }
 
 	// Playback button pushed
@@ -388,10 +421,10 @@ int main(void)
 			sdcard_op_result = f_open(&fil, file_name_read, FA_READ);
 		}
 
-		HAL_I2S_DMAStop(&hi2s2);
+		HAL_I2S_DMAStop(&hi2s2); // Stop playing through the speaker
+
 		playback_button = 0;
 		device_state = OFF;
-		f_mount(0,"",0);
 	}
     /* USER CODE END WHILE */
 
