@@ -7,7 +7,10 @@ The device operates as a state machine with its 4 states being: Off, Listening, 
 
 The device is low power and energy efficient. The majority of its operating state is just listening for sound, so I made use of the microcontroller's supported low power states to conserve energy. I also made use of the DMA capabilities and interrupts to offload menial tasks from the CPU.
 
+
+
 ## Project Details
+![Schematic](assets/STM32F4-Sleep-Talking-Recorder-Schematic.png)
 ### Microphone
 An analog output MEMS microphone is used to pick up the sound. The onboard ADC peripheral samples these readings at a sampling rate of 44.1kHz and sends the values to a double buffer via a DMA stream. The sampling rate is performed with a timer interrupt set to 44.1kHz.
 
